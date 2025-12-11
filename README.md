@@ -15,6 +15,14 @@ A full-stack simulation and visualization pipeline for real-time radar tracking 
 
 `node index.js`
 
+Also need python virtual environment
+
+`python3 -m venv venv`
+
+`source venv/bin/activate`
+
+`pip install python-dateutil`
+
 2. Setup frontend
 
 You can open the `frontend/index.html` in your browser, or use VSC's Live server to activate. 

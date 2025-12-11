@@ -1,3 +1,4 @@
 *.json
 radar_data.json
 server/node_modules
+venv/
