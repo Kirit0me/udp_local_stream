@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radar Stream Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-gray-900 text-white font-mono h-screen flex flex-col">
+
+    <div id="app" class="p-6 w-full max-w-7xl mx-auto flex-grow flex flex-col">
+        <header class="mb-6 flex justify-between items-center border-b border-gray-700 pb-4">
+            <div>
+                <h1 class="text-3xl font-bold text-green-400 tracking-wider">RADAR OPS</h1>
+                <p class="text-gray-400 text-xs uppercase tracking-widest">UDP Stream &bull; MongoDB &bull; WebSocket</p>
+            </div>
+            <div class="text-right">
+                <div class="text-[10px] text-gray-500 uppercase">System Status</div>
+                <div class="text-sm text-green-400 animate-pulse" v-if="isConnected">ONLINE</div>
+                <div class="text-sm text-red-400" v-else>OFFLINE</div>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-grow">
+            
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                <div class="bg-gray-800 p-6 rounded-lg border border-gray-700 shadow-xl relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-2 opacity-10">
+                        <svg class="w-24 h-24 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a8 8 0 100 16 8 8 0 000-16zM8 11a1 1 0 112 0 1 1 0 01-2 0z" /></svg>
+                    </div>
+                    
+                    <h2 class="text-xl font-bold mb-4 text-blue-400 border-b border-gray-700 pb-2">LIVE TRACK</h2>
+                    
+                    <div v-if="latestTrack" class="space-y-2 text-sm">
+                        <div class="flex justify-between"><span class="text-gray-500">Track ID</span> <span class="font-bold text-white text-lg">{{ latestTrack.track_id }}</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">Freq</span> <span class="text-green-300">{{ latestTrack.freq_mhz }} MHz</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">PRF</span> <span class="text-blue-300">{{ latestTrack.prf_hz }} Hz</span></div>
+                        <div class="flex justify-between"><span class="text-gray-500">Scan Type</span> <span class="px-2 bg-gray-700 rounded text-xs text-white">{{ latestTrack.scan_type }}</span></div>
+                        
+                        <div class="mt-4 pt-2 border-t border-gray-700">
+                             <div class="flex justify-between text-xs text-gray-400 mb-1"><span>LATITUDE</span> <span>LONGITUDE</span></div>
+                             <div class="flex justify-between font-mono text-yellow-500">
+                                <span>{{ latestTrack.own_position?.latitude_degdec.toFixed(5) }}</span>
+                                <span>{{ latestTrack.own_position?.longitude_degdec.toFixed(5) }}</span>
+                             </div>
+                        </div>
+                    </div>
+                    <div v-else class="text-gray-500 italic py-10 text-center">Waiting for signal...</div>
+                </div>
+
+                <div class="bg-gray-800 p-4 rounded-lg border border-gray-700 shadow-xl" v-if="latestTrack">
+                    <h3 class="text-xs font-bold text-gray-500 uppercase mb-3">Pipeline Latency</h3>
+                    
+                    <div class="grid grid-cols-2 gap-2 text-[10px] mb-3 font-mono">
+                        <div class="text-gray-500">1. SENT (Sim)</div>
+                        <div class="text-right text-gray-300">{{ formatTime(latestTrack.ts_sent) }}</div>
+
+                        <div class="text-gray-500">2. RCVD (Server)</div>
+                        <div class="text-right text-gray-300">{{ formatTime(latestTrack.ts_received) }}</div>
+                        
+                        <div class="text-gray-500">3. SAVED (DB)</div>
+                        <div class="text-right text-gray-300">{{ formatTime(latestTrack.ts_stored) }}</div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="bg-gray-900 rounded p-2 flex justify-between items-center border border-gray-700">
+                            <span class="text-xs text-blue-400">Network Lag</span>
+                            <span class="font-bold text-sm">{{ calcDiff(latestTrack.ts_sent, latestTrack.ts_received) }} ms</span>
+                        </div>
+                        <div class="bg-gray-900 rounded p-2 flex justify-between items-center border border-gray-700">
+                            <span class="text-xs text-green-400">DB Write Time</span>
+                            <span class="font-bold text-sm">{{ calcDiff(latestTrack.ts_received, latestTrack.ts_stored) }} ms</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 bg-gray-800 rounded-lg border border-gray-700 flex flex-col overflow-hidden shadow-xl">
+                <div class="p-4 border-b border-gray-700 bg-gray-800">
+                    <h2 class="text-lg font-bold text-purple-400">SIGNAL LOG</h2>
+                </div>
+                <div class="overflow-y-auto flex-grow p-0">
+                    <table class="w-full text-sm text-left text-gray-300">
+                        <thead class="text-xs text-gray-500 uppercase bg-gray-900 sticky top-0">
+                            <tr>
+                                <th class="px-4 py-3">Received Time</th>
+                                <th class="px-4 py-3">ID</th>
+                                <th class="px-4 py-3">Freq (MHz)</th>
+                                <th class="px-4 py-3 text-right">Write Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="track in history" :key="track.ts_sent" class="border-b border-gray-700 hover:bg-gray-700 transition duration-150">
+                                <td class="px-4 py-2 font-mono text-gray-400">{{ formatTime(track.ts_received) }}</td>
+                                <td class="px-4 py-2 font-bold text-white">{{ track.track_id }}</td>
+                                <td class="px-4 py-2 text-green-300">{{ track.freq_mhz }}</td>
+                                <td class="px-4 py-2 text-right font-mono text-xs text-gray-500">
+                                    {{ calcDiff(track.ts_received, track.ts_stored) }} ms
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref } = Vue;
+        // Ensure this matches your server port
+        const socket = io("http://localhost:3000");
+
+        createApp({
+            setup() {
+                const latestTrack = ref(null);
+                const history = ref([]);
+                const isConnected = ref(false);
+
+                // --- Helper Functions ---
+                const formatTime = (isoString) => {
+                    if (!isoString) return '--:--:--';
+                    // Returns HH:mm:ss.sss
+                    return new Date(isoString).toISOString().split('T')[1].replace('Z', ''); 
+                };
+
+                const calcDiff = (start, end) => {
+                    if (!start || !end) return 0;
+                    const diff = new Date(end) - new Date(start);
+                    return diff >= 0 ? diff : 0; // Prevent negative numbers due to clock drift if any
+                };
+
+                // --- Socket Events ---
+                socket.on("connect", () => {
+                    isConnected.value = true;
+                    console.log("Connected to WebSocket");
+                });
+
+                socket.on("disconnect", () => {
+                    isConnected.value = false;
+                });
+
+                socket.on("new_track", (data) => {
+                    latestTrack.value = data;
+                    
+                    // Add to history (limit to 20 rows)
+                    history.value.unshift(data);
+                    if (history.value.length > 20) {
+                        history.value.pop();
+                    }
+                });
+
+                return {
+                    latestTrack,
+                    history,
+                    isConnected,
+                    formatTime,
+                    calcDiff
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
