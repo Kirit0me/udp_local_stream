@@ -2,3 +2,4 @@
 radar_data.json
 server/node_modules
 venv/
+mongodb_data/
