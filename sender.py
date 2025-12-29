@@ -74,7 +74,7 @@ try:
                 message = json.dumps(to_send).encode('utf-8')
                 sock.sendto(message, (UDP_IP, UDP_PORT))
                 
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Sent ID: {track.get('track_id')} (Recorded Delay: {time_offset_in_recording:.2f}s)")
+                print(f"[{datetime.now().strftime('%H:%M:%S:')}] Sent ID: {track.get('track_id')} (Recorded Delay: {time_offset_in_recording:.2f}s)")
 
         print("Replay finished.")
 
